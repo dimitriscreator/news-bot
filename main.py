@@ -21,9 +21,11 @@ import prompt as P
 # ΡΥΘΜΙΣΕΙΣ — άλλαξε εδώ αν θες, χωρίς να ξέρεις κώδικα
 # =============================================================================
 
-# Ποιο μοντέλο Gemini χρησιμοποιούμε.
-# Δωρεάν επιλογές: "gemini-3.5-flash" (καλύτερο) ή "gemini-3-flash" (εφεδρικό)
-MODEL_NAME = "gemini-3.5-flash"
+# Ποια μοντέλα Gemini χρησιμοποιούμε.
+# Δοκιμάζει ΠΡΩΤΑ το πρωτεύον. Αν είναι γεμάτο (503 "high demand"),
+# πέφτει αυτόματα στο εφεδρικό — ώστε το report να μη χαλάει ποτέ.
+MODEL_PRIMARY  = "gemini-3.5-flash"   # καλύτερο, αλλά πιο συχνά "γεμάτο"
+MODEL_FALLBACK = "gemini-2.5-flash"   # πιο σταθερό εφεδρικό
 
 # Όνομα του secret με το κλειδί (όπως το έβαλες στο GitHub)
 API_KEY_NAME = "GEMINI_API_KEY_NEWS_AGENT"
@@ -122,18 +124,57 @@ def make_gemini_client():
     return genai.Client(api_key=api_key)
 
 
+def _call_one_model(client, model_name, prompt_text, config):
+    """
+    Καλεί ΕΝΑ συγκεκριμένο μοντέλο, με exponential backoff:
+    αν βγει προσωρινό σφάλμα (503/429), περιμένει 2s, 4s, 8s... και ξαναδοκιμάζει.
+    Επιστρέφει το κείμενο, ή πετάει σφάλμα αν αποτύχουν όλες οι προσπάθειες.
+    """
+    max_attempts = 4
+    for attempt in range(max_attempts):
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt_text,
+                config=config,
+            )
+            return response.text
+        except Exception as e:
+            msg = str(e)
+            is_retryable = any(code in msg for code in
+                               ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED",
+                                "500", "504"))
+            if is_retryable and attempt < max_attempts - 1:
+                wait = 2 ** (attempt + 1)   # 2, 4, 8 δευτερόλεπτα
+                print(f"      ⏳ {model_name}: προσωρινό σφάλμα — περιμένω {wait}s "
+                      f"({attempt + 1}/{max_attempts})...")
+                time.sleep(wait)
+                continue
+            raise   # δεν είναι retryable ή τελείωσαν οι προσπάθειες
+
+
 def ask_gemini(client, prompt_text: str, system_text: str = "") -> str:
-    """Στέλνει ένα ερώτημα στο Gemini και επιστρέφει την απάντηση ως κείμενο."""
+    """
+    Στέλνει ένα ερώτημα στο Gemini.
+    Στρατηγική διπλού διχτυού ασφαλείας:
+      1) Δοκιμάζει το ΠΡΩΤΕΥΟΝ μοντέλο (με backoff).
+      2) Αν αυτό αποτύχει τελείως, πέφτει στο ΕΦΕΔΡΙΚΟ (με backoff).
+    """
     from google.genai import types
+
     config = None
     if system_text:
         config = types.GenerateContentConfig(system_instruction=system_text)
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt_text,
-        config=config,
-    )
-    return response.text
+
+    # --- Προσπάθεια 1: πρωτεύον μοντέλο ---
+    try:
+        return _call_one_model(client, MODEL_PRIMARY, prompt_text, config)
+    except Exception as e:
+        print(f"      ↪️  Το {MODEL_PRIMARY} δεν τα κατάφερε — δοκιμάζω το "
+              f"εφεδρικό {MODEL_FALLBACK}")
+
+    # --- Προσπάθεια 2: εφεδρικό μοντέλο ---
+    return _call_one_model(client, MODEL_FALLBACK, prompt_text, config)
 
 
 def select_top_articles(client, category: str, articles: list) -> list:
@@ -281,7 +322,7 @@ def run():
         for art in top:
             try:
                 analyzed.append(analyze_article(client, category, art))
-                time.sleep(1)  # μικρή παύση για να μη ζοριστεί το free tier
+                time.sleep(5)  # παύση 5s → μένουμε κάτω από 15 αιτήματα/λεπτό
             except Exception as e:
                 print(f"   ⚠️  Αποτυχία ανάλυσης: {e}")
         report_data[category] = analyzed
