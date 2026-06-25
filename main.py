@@ -328,7 +328,9 @@ def send_telegram(report_data: dict, page_url: str, cost_summary: str = ""):
         anchor = category.lower().replace("_", "-")
 
         if page_url:
-            link = f"{page_url}/{today.isoformat()}.html#{anchor}"
+            # page_url φτάνει ήδη ως πλήρες URL (με ημερομηνία)
+            # π.χ. https://dimitriscreator.github.io/news-bot/2026-06-25.html
+            link = f"{page_url}#{anchor}"
             lines.append(f"{icon} [{label} — {count} αναλύσεις]({link})")
         else:
             lines.append(f"{icon} *{label}* — {count} αναλύσεις")
