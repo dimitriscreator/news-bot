@@ -69,8 +69,10 @@ def build_html(report_data: dict, date: datetime.date) -> str:
               </a>
             </article>""")
 
+        # Το anchor id χρησιμοποιείται για τα links ανά κατηγορία στο Telegram
+        anchor = category.lower().replace("_", "-")
         sections.append(f"""
-        <section class="category">
+        <section class="category" id="{anchor}">
           <div class="category-header">
             <span class="category-icon">{icon}</span>
             <h2 class="category-name">{label}</h2>
