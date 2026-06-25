@@ -24,8 +24,8 @@ import prompt as P
 # Ποια μοντέλα Gemini χρησιμοποιούμε.
 # Δοκιμάζει ΠΡΩΤΑ το πρωτεύον. Αν είναι γεμάτο (503 "high demand"),
 # πέφτει αυτόματα στο εφεδρικό — ώστε το report να μη χαλάει ποτέ.
-MODEL_PRIMARY  = "gemini-3.5-flash"   # καλύτερο, αλλά πιο συχνά "γεμάτο"
-MODEL_FALLBACK = "gemini-2.5-flash"   # πιο σταθερό εφεδρικό
+MODEL_PRIMARY  = "gemini-2.5-flash"       # αντί για 3.5
+MODEL_FALLBACK = "gemini-2.5-flash-lite"  # αντί για 2.5
 
 # Όνομα του secret με το κλειδί (όπως το έβαλες στο GitHub)
 API_KEY_NAME = "GEMINI_API_KEY_NEWS_AGENT"
