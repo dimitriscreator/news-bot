@@ -265,7 +265,11 @@ def _to_html(text: str) -> str:
 # =============================================================================
 
 def send_telegram(report_data: dict, page_url: str):
-    """Στέλνει σύντομο μήνυμα στο Telegram με περιλήψεις + link στη σελίδα."""
+    """
+    Στέλνει στο Telegram:
+    - Ένα εισαγωγικό μήνυμα με ημερομηνία
+    - Ένα link ανά κατηγορία που πάει κατευθείαν στη σωστή ενότητα
+    """
     token = os.environ.get("TELEGRAM_BOT_TOKEN_NEWS_AGENT")
     chat_id = os.environ.get("TELEGRAM_CHAT_ID_NEWS_AGENT")
     if not token or not chat_id:
@@ -275,30 +279,51 @@ def send_telegram(report_data: dict, page_url: str):
     from builder import CATEGORY_LABELS
     today = datetime.date.today()
 
-    # Χτίζουμε ένα σύντομο, καθαρό μήνυμα
-    lines = [f"📰 *Πρωινό Δελτίο Ανάλυσης*", ""]
+    # Ελληνική ημερομηνία
+    months = ["Ιανουαρίου","Φεβρουαρίου","Μαρτίου","Απριλίου","Μαΐου",
+              "Ιουνίου","Ιουλίου","Αυγούστου","Σεπτεμβρίου","Οκτωβρίου",
+              "Νοεμβρίου","Δεκεμβρίου"]
+    date_str = f"{today.day} {months[today.month-1]} {today.year}"
+
+    def send_msg(text):
+        """Αποστολή ενός μηνύματος."""
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        resp = requests.post(url, json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "Markdown",
+            "disable_web_page_preview": True,
+        })
+        if resp.status_code != 200:
+            print(f"   ⚠️  Σφάλμα Telegram: {resp.status_code} — {resp.text[:100]}")
+
+    # --- Μήνυμα 1: Εισαγωγή ---
+    send_msg(
+        f"📰 *Πρωινό Δελτίο Ανάλυσης*\n"
+        f"_{date_str}_\n\n"
+        f"Πάτα σε κάθε θεματική για να ανοίξεις κατευθείαν την ανάλυσή της 👇"
+    )
+    time.sleep(0.5)
+
+    # --- Μήνυμα 2: ένα link ανά κατηγορία ---
+    lines = []
     for category, articles in report_data.items():
         if not articles:
             continue
         label, icon = CATEGORY_LABELS.get(category, (category, "•"))
-        lines.append(f"{icon} *{label}*")
-        for art in articles:
-            lines.append(f"• {art['title']}")
-        lines.append("")
-    lines.append(f"👉 [Διάβασε την πλήρη ανάλυση εδώ]({page_url})")
-    message = "\n".join(lines)
+        count = len(articles)
+        # Anchor: π.χ. INTL_BUSINESS_STRATEGY → intl-business-strategy
+        anchor = category.lower().replace("_", "-")
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    resp = requests.post(url, json={
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
-    })
-    if resp.status_code == 200:
-        print("   ✅ Το μήνυμα στάλθηκε στο Telegram!")
-    else:
-        print(f"   ⚠️  Σφάλμα Telegram: {resp.status_code} — {resp.text[:200]}")
+        if page_url:
+            link = f"{page_url}/{today.isoformat()}.html#{anchor}"
+            lines.append(f"{icon} [{label} — {count} αναλύσεις]({link})")
+        else:
+            lines.append(f"{icon} *{label}* — {count} αναλύσεις")
+
+    send_msg("\n\n".join(lines))
+
+    print("   ✅ Το μήνυμα στάλθηκε στο Telegram!")
 
 
 # =============================================================================
