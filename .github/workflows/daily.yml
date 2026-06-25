@@ -1,0 +1,41 @@
+name: Daily News Report
+
+on:
+  schedule:
+    # Η ώρα είναι σε UTC. Ελλάδα/Ολλανδία καλοκαίρι → 04:00 UTC ≈ 07:00 τοπική.
+    # Χειμώνα άλλαξε το "4" σε "5" αν θες να μείνει 07:00 τοπική.
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  build-and-send:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the news bot
+        env:
+          GEMINI_API_KEY_NEWS_AGENT: ${{ secrets.GEMINI_API_KEY_NEWS_AGENT }}
+          TELEGRAM_BOT_TOKEN_NEWS_AGENT: ${{ secrets.TELEGRAM_BOT_TOKEN_NEWS_AGENT }}
+          TELEGRAM_CHAT_ID_NEWS_AGENT: ${{ secrets.TELEGRAM_CHAT_ID_NEWS_AGENT }}
+          PAGES_URL: ${{ vars.PAGES_URL }}
+        run: python main.py
+
+      - name: Save reports back to repo
+        run: |
+          git config user.name "news-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add docs/ reports/
+          git commit -m "Report $(date +%Y-%m-%d)" || echo "Τίποτα νέο"
+          git push
