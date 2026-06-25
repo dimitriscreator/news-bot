@@ -1,19 +1,10 @@
 # =============================================================================
 # builder.py — Φτιάχνει την HTML σελίδα και το .md αρχείο του report
 # =============================================================================
-# Δουλειά:
-#   1) build_html()  → φτιάχνει μια όμορφη, ευανάγνωστη ιστοσελίδα με ΟΛΗ
-#      την ανάλυση (αυτή ανοίγει στον browser με ένα πάτημα από το Telegram)
-#   2) build_markdown() → φτιάχνει το .md αρχείο για το Obsidian αργότερα
-#
-# Δεν χρειάζεται να αγγίξεις αυτό το αρχείο για να αλλάξεις περιεχόμενο —
-# μόνο αν θες να αλλάξεις την ΕΜΦΑΝΙΣΗ της σελίδας.
-# =============================================================================
 
 import datetime
 import html as html_lib
 
-# Φιλικά ελληνικά ονόματα + εικονίδιο για κάθε κατηγορία
 CATEGORY_LABELS = {
     "POLITICS":                ("Πολιτική", "🏛"),
     "GEOPOLITICS_DIPLOMACY":   ("Γεωπολιτική & Διπλωματία", "🌍"),
@@ -26,26 +17,17 @@ CATEGORY_LABELS = {
 
 
 def _greek_date(d: datetime.date) -> str:
-    """Μετατρέπει μια ημερομηνία σε ελληνικό κείμενο, π.χ. '25 Ιουνίου 2026'."""
-    months = ["Ιανουαρίου", "Φεβρουαρίου", "Μαρτίου", "Απριλίου", "Μαΐου",
-              "Ιουνίου", "Ιουλίου", "Αυγούστου", "Σεπτεμβρίου", "Οκτωβρίου",
-              "Νοεμβρίου", "Δεκεμβρίου"]
+    months = ["Ιανουαρίου","Φεβρουαρίου","Μαρτίου","Απριλίου","Μαΐου",
+              "Ιουνίου","Ιουλίου","Αυγούστου","Σεπτεμβρίου","Οκτωβρίου",
+              "Νοεμβρίου","Δεκεμβρίου"]
     return f"{d.day} {months[d.month - 1]} {d.year}"
 
 
-# =============================================================================
-# Η ΙΣΤΟΣΕΛΙΔΑ (HTML + CSS)
-# =============================================================================
-
-def build_html(report_data: dict, date: datetime.date) -> str:
-    """
-    report_data: λεξικό { κατηγορία: [ {title, source, url, analysis_html}, ... ] }
-    Επιστρέφει ολόκληρη την HTML σελίδα ως κείμενο.
-    """
+def build_html(report_data: dict, date: datetime.date,
+               cost_summary: str = "") -> str:
     date_str = _greek_date(date)
-
-    # --- Φτιάχνουμε το σώμα: ένα τμήμα ανά κατηγορία ---
     sections = []
+
     for category, articles in report_data.items():
         if not articles:
             continue
@@ -53,23 +35,23 @@ def build_html(report_data: dict, date: datetime.date) -> str:
 
         cards = []
         for art in articles:
-            title  = html_lib.escape(art["title"])
-            source = html_lib.escape(art["source"])
-            url    = html_lib.escape(art["url"])
-            # Η ανάλυση έρχεται ήδη ως HTML (paragraphs), δεν την escape-άρουμε
+            title    = html_lib.escape(art["title"])
+            source   = html_lib.escape(art["source"])
+            url      = html_lib.escape(art["url"])
             analysis = art["analysis_html"]
 
             cards.append(f"""
             <article class="card">
               <h3 class="card-title">{title}</h3>
-              <div class="card-source">{source}</div>
+              <div class="card-meta">
+                <span class="card-source">{source}</span>
+                <a class="source-link-top" href="{url}" target="_blank" rel="noopener">
+                  → Διάβασε το πρωτότυπο άρθρο
+                </a>
+              </div>
               <div class="analysis">{analysis}</div>
-              <a class="source-link" href="{url}" target="_blank" rel="noopener">
-                Διάβασε το αυθεντικό άρθρο στην πηγή →
-              </a>
             </article>""")
 
-        # Το anchor id χρησιμοποιείται για τα links ανά κατηγορία στο Telegram
         anchor = category.lower().replace("_", "-")
         sections.append(f"""
         <section class="category" id="{anchor}">
@@ -82,7 +64,13 @@ def build_html(report_data: dict, date: datetime.date) -> str:
 
     body = "".join(sections)
 
-    # --- Το πλήρες HTML με ενσωματωμένο στυλ ---
+    cost_html = ""
+    if cost_summary:
+        cost_html = f"""
+    <div class="cost-badge">
+      💰 Κόστος report: <strong>{html_lib.escape(cost_summary)}</strong>
+    </div>"""
+
     return f"""<!DOCTYPE html>
 <html lang="el">
 <head>
@@ -94,10 +82,10 @@ def build_html(report_data: dict, date: datetime.date) -> str:
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {{
-    --ink:        #0f1b2d;   /* βαθύ navy — κύρος */
-    --paper:      #faf7f0;   /* ζεστό off-white — ξεκούραστο */
+    --ink:        #0f1b2d;
+    --paper:      #faf7f0;
     --paper-card: #ffffff;
-    --gold:       #b07a2c;   /* κεχριμπαρένιο accent */
+    --gold:       #b07a2c;
     --gold-soft:  #e9d9b8;
     --text:       #1d2b3a;
     --text-soft:  #5a6b7d;
@@ -116,7 +104,7 @@ def build_html(report_data: dict, date: datetime.date) -> str:
     -webkit-font-smoothing: antialiased;
   }}
 
-  /* --- ΕΠΙΚΕΦΑΛΙΔΑ --- */
+  /* ΕΠΙΚΕΦΑΛΙΔΑ */
   .masthead {{
     background: var(--ink);
     color: var(--paper);
@@ -144,7 +132,7 @@ def build_html(report_data: dict, date: datetime.date) -> str:
     font-size: 17px;
   }}
 
-  /* --- ΠΕΡΙΕΧΟΜΕΝΟ --- */
+  /* ΠΕΡΙΕΧΟΜΕΝΟ */
   .wrap {{ max-width: 720px; margin: 0 auto; padding: 8px 18px 60px; }}
 
   .category {{ margin-top: 44px; }}
@@ -165,7 +153,7 @@ def build_html(report_data: dict, date: datetime.date) -> str:
     color: var(--ink);
   }}
 
-  /* --- ΚΑΡΤΑ ΑΡΘΡΟΥ --- */
+  /* ΚΑΡΤΑ ΑΡΘΡΟΥ */
   .card {{
     background: var(--paper-card);
     border: 1px solid var(--line);
@@ -179,45 +167,84 @@ def build_html(report_data: dict, date: datetime.date) -> str:
     font-weight: 600;
     font-size: 21px;
     line-height: 1.3;
-    margin: 0 0 4px;
+    margin: 0 0 8px;
     color: var(--ink);
+  }}
+
+  /* Meta row: πηγή + link πρωτοτύπου στην κορυφή */
+  .card-meta {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 18px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--gold-soft);
   }}
   .card-source {{
     font-size: 13px;
     color: var(--gold);
     font-weight: 600;
     letter-spacing: 0.03em;
-    margin-bottom: 18px;
   }}
-
-  .analysis {{ color: var(--text); }}
-  .analysis p {{ margin: 0 0 14px; }}
-  /* Οι μικροί τίτλοι μέσα στην ανάλυση (🏛 ΠΛΑΙΣΙΟ, 📖 ΠΙΣΩ ΑΠΟ... κ.λπ.) */
-  .analysis .block-label {{
-    display: block;
+  /* Link στην ΚΟΡΥΦΗ της κάρτας — εμφανές κουμπί */
+  .source-link-top {{
+    font-size: 13px;
     font-weight: 600;
     color: var(--ink);
-    margin: 20px 0 6px;
+    background: var(--gold-soft);
+    text-decoration: none;
+    padding: 4px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }}
+  .source-link-top:hover {{ background: var(--gold); color: #fff; }}
+
+  /* ΑΝΑΛΥΣΗ */
+  .analysis {{ color: var(--text); }}
+  .analysis p {{ margin: 0 0 14px; }}
+  .analysis strong {{ color: var(--ink); }}
+  .analysis em {{ color: var(--text-soft); font-style: italic; }}
+
+  /* Block labels (εικονίδια-τίτλοι ενοτήτων) */
+  .analysis .block-label {{
+    display: block;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 22px 0 6px;
     font-size: 15px;
     letter-spacing: 0.02em;
+    font-family: 'Inter', sans-serif;
   }}
 
-  .source-link {{
-    display: inline-block;
-    margin-top: 12px;
-    color: var(--gold);
-    font-weight: 600;
-    text-decoration: none;
-    border-bottom: 1px solid var(--gold-soft);
-    padding-bottom: 1px;
+  /* Αριθμημένα σημεία ①②③ */
+  .analysis .numbered-point {{
+    margin: 6px 0 6px 18px;
+    padding-left: 8px;
+    border-left: 3px solid var(--gold-soft);
+    color: var(--text);
   }}
-  .source-link:hover {{ border-bottom-color: var(--gold); }}
+
+  /* ΚΟΣΤΟΣ BADGE */
+  .cost-badge {{
+    margin: 30px 0 0;
+    padding: 10px 16px;
+    background: var(--paper-card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--text-soft);
+    text-align: center;
+  }}
+  .cost-badge strong {{ color: var(--text); }}
 
   .footer {{
     text-align: center;
     color: var(--text-soft);
     font-size: 13px;
-    margin-top: 50px;
+    margin-top: 30px;
     padding-top: 22px;
     border-top: 1px solid var(--line);
   }}
@@ -226,6 +253,7 @@ def build_html(report_data: dict, date: datetime.date) -> str:
     body {{ font-size: 16px; }}
     .masthead h1 {{ font-size: 25px; }}
     .card {{ padding: 20px 17px; }}
+    .card-meta {{ flex-direction: column; align-items: flex-start; }}
   }}
 </style>
 </head>
@@ -237,6 +265,7 @@ def build_html(report_data: dict, date: datetime.date) -> str:
   </header>
   <main class="wrap">
     {body}
+    {cost_html}
     <div class="footer">
       Αυτόματη ανάλυση · Δημιουργήθηκε για προσωπική χρήση<br>
       Ανάλυση, όχι είδηση — εργαλεία σκέψης για κάθε πρωί
@@ -246,12 +275,8 @@ def build_html(report_data: dict, date: datetime.date) -> str:
 </html>"""
 
 
-# =============================================================================
-# ΤΟ MARKDOWN ΑΡΧΕΙΟ (για Obsidian αργότερα)
-# =============================================================================
-
-def build_markdown(report_data: dict, date: datetime.date) -> str:
-    """Φτιάχνει ένα καθαρό .md αρχείο με όλη την ανάλυση της ημέρας."""
+def build_markdown(report_data: dict, date: datetime.date,
+                   cost_summary: str = "") -> str:
     date_iso = date.isoformat()
     lines = [
         "---",
@@ -272,12 +297,14 @@ def build_markdown(report_data: dict, date: datetime.date) -> str:
 
         for art in articles:
             lines.append(f"### {art['title']}")
-            lines.append(f"*Πηγή: {art['source']}*")
+            lines.append(f"*Πηγή: [{art['source']}]({art['url']})*")
             lines.append("")
-            # Η ανάλυση σε markdown (η plain εκδοχή, χωρίς HTML tags)
             lines.append(art.get("analysis_md", art["title"]))
             lines.append("")
             lines.append(f"🔗 [Αυθεντικό άρθρο]({art['url']})")
             lines.append("\n---\n")
+
+    if cost_summary:
+        lines.append(f"\n---\n💰 **Κόστος report:** {cost_summary}")
 
     return "\n".join(lines)
