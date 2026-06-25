@@ -126,11 +126,11 @@ def make_gemini_client():
 
 def _call_one_model(client, model_name, prompt_text, config):
     """
-    Καλεί ΕΝΑ συγκεκριμένο μοντέλο, με exponential backoff:
-    αν βγει προσωρινό σφάλμα (503/429), περιμένει 2s, 4s, 8s... και ξαναδοκιμάζει.
-    Επιστρέφει το κείμενο, ή πετάει σφάλμα αν αποτύχουν όλες οι προσπάθειες.
+    Καλεί ΕΝΑ μοντέλο με σύντομο backoff: αν βγει προσωρινό σφάλμα,
+    περιμένει 2s, μετά 4s, και ξαναδοκιμάζει — το πολύ 3 προσπάθειες.
+    Έτσι ένα άρθρο δεν "κρεμάει" ποτέ πάνω από ~6 δευτερόλεπτα αναμονής.
     """
-    max_attempts = 4
+    max_attempts = 3
     for attempt in range(max_attempts):
         try:
             response = client.models.generate_content(
@@ -145,12 +145,12 @@ def _call_one_model(client, model_name, prompt_text, config):
                                ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED",
                                 "500", "504"))
             if is_retryable and attempt < max_attempts - 1:
-                wait = 2 ** (attempt + 1)   # 2, 4, 8 δευτερόλεπτα
-                print(f"      ⏳ {model_name}: προσωρινό σφάλμα — περιμένω {wait}s "
+                wait = 2 * (attempt + 1)   # 2, 4 δευτερόλεπτα
+                print(f"      ⏳ {model_name}: γεμάτο — περιμένω {wait}s "
                       f"({attempt + 1}/{max_attempts})...")
                 time.sleep(wait)
                 continue
-            raise   # δεν είναι retryable ή τελείωσαν οι προσπάθειες
+            raise
 
 
 def ask_gemini(client, prompt_text: str, system_text: str = "") -> str:
@@ -178,38 +178,48 @@ def ask_gemini(client, prompt_text: str, system_text: str = "") -> str:
 
 
 def select_top_articles(client, category: str, articles: list) -> list:
-    """Ρωτάει το Gemini ποια είναι τα TOP_PER_CATEGORY καλύτερα άρθρα."""
+    """
+    Διαλέγει τα TOP_PER_CATEGORY καλύτερα άρθρα ΧΩΡΙΣ κλήση στο Gemini
+    (γρήγορο, δωρεάν, αξιόπιστο). Κανόνας προτεραιότητας:
+      1) Προτίμησε αξιόπιστες wire services (Reuters, AP, AFP, Bloomberg)
+      2) Κράτα ποικιλία πηγών (όχι 3 άρθρα από την ίδια πηγή)
+    """
     if len(articles) <= TOP_PER_CATEGORY:
-        return articles  # αν είναι λίγα, τα κρατάμε όλα
+        return articles
 
-    # Φτιάχνουμε αριθμημένη λίστα τίτλων για να διαλέξει
-    listing = "\n".join(
-        f"{i+1}. {a['title']} ({a['source']})"
-        for i, a in enumerate(articles)
-    )
-    prompt_text = P.SELECTION_PROMPT_TEMPLATE.format(
-        count=len(articles),
-        category=category,
-        articles_list=listing,
-        top_n=TOP_PER_CATEGORY,
-    )
+    # Πηγές που θεωρούμε "πρώτης γραμμής" — παίρνουν προτεραιότητα
+    trusted = ("reuters", "associated press", " ap ", "afp", "bloomberg",
+               "financial times", "economist", "wall street journal")
 
-    try:
-        answer = ask_gemini(client, prompt_text)
-        # Διαβάζουμε τους αριθμούς που μας έδωσε (π.χ. "2, 7, 12")
-        chosen_indices = []
-        for token in answer.replace("\n", ",").split(","):
-            token = token.strip()
-            if token.isdigit():
-                idx = int(token) - 1
-                if 0 <= idx < len(articles):
-                    chosen_indices.append(idx)
-        chosen = [articles[i] for i in chosen_indices[:TOP_PER_CATEGORY]]
-        # Αν κάτι πήγε στραβά και δεν διάλεξε τίποτα, παίρνουμε τα πρώτα
-        return chosen if chosen else articles[:TOP_PER_CATEGORY]
-    except Exception as e:
-        print(f"   ⚠️  Πρόβλημα στην επιλογή για {category}: {e}")
-        return articles[:TOP_PER_CATEGORY]
+    def score(article):
+        src = article["source"].lower()
+        # Όσο πιο αξιόπιστη η πηγή, τόσο μεγαλύτερο σκορ
+        return 1 if any(t in src for t in trusted) else 0
+
+    # Ταξινόμηση: πρώτα οι αξιόπιστες πηγές
+    ranked = sorted(articles, key=score, reverse=True)
+
+    # Κράτα ποικιλία: απόφυγε 3 άρθρα από την ίδια πηγή
+    chosen = []
+    used_sources = []
+    for art in ranked:
+        src = art["source"]
+        # Επίτρεψε max 1 άρθρο ανά πηγή μέχρι να γεμίσουμε
+        if used_sources.count(src) < 1:
+            chosen.append(art)
+            used_sources.append(src)
+        if len(chosen) >= TOP_PER_CATEGORY:
+            break
+
+    # Αν δεν γέμισε (λίγες πηγές), συμπλήρωσε από τα υπόλοιπα
+    if len(chosen) < TOP_PER_CATEGORY:
+        for art in ranked:
+            if art not in chosen:
+                chosen.append(art)
+            if len(chosen) >= TOP_PER_CATEGORY:
+                break
+
+    return chosen[:TOP_PER_CATEGORY]
 
 
 def analyze_article(client, category: str, article: dict) -> dict:
@@ -322,7 +332,7 @@ def run():
         for art in top:
             try:
                 analyzed.append(analyze_article(client, category, art))
-                time.sleep(5)  # παύση 5s → μένουμε κάτω από 15 αιτήματα/λεπτό
+                time.sleep(2)  # μικρή παύση μεταξύ άρθρων (21 κλήσεις σύνολο)
             except Exception as e:
                 print(f"   ⚠️  Αποτυχία ανάλυσης: {e}")
         report_data[category] = analyzed
