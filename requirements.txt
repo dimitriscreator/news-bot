@@ -1,0 +1,6 @@
+# Εργαλεία (libraries) που χρειάζεται ο κώδικας.
+# Το GitHub Actions θα τα εγκαταστήσει αυτόματα πριν τρέξει το bot.
+
+feedparser        # για διάβασμα RSS feeds
+google-genai      # το νέο επίσημο SDK της Google για Gemini
+requests          # για αποστολή μηνυμάτων στο Telegram
